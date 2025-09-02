@@ -5,7 +5,7 @@
 [![MediaPipe](https://img.shields.io/badge/MediaPipe-Latest-green.svg)](https://mediapipe.dev/)
 [![TensorFlow.js](https://img.shields.io/badge/TensorFlow.js-4.22.0-orange.svg)](https://www.tensorflow.org/js)
 
-An intelligent interview simulation application that combines AI-generated questions with advanced computer vision to analyze body language, eye contact, and speech patterns during practice sessions.
+AI-powered interview practice platform that generates role-specific questions, analyzes body language in real-time using computer vision, and provides comprehensive feedback to help job seekers ace their interviews.
 
 ## 🌟 Features
 

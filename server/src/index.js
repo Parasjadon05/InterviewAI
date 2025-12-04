@@ -8,7 +8,7 @@ const fs = require('fs');
 const { transcribeAudioFile, getAudioDuration, calculateAudioMetrics } = require('./services/transcriptionService');
 const { getLLMFeedback, getBatchLLMFeedback } = require('./services/llmFeedbackService');
 const { transcribeWebmWithConversion } = require('./transcribeWithConversion');
-const { generateInterviewQuestions, generateRoleBasedQuestions } = require('../../questionGenerator');
+const { generateInterviewQuestions, generateRoleBasedQuestions } = require('../questionGenerator');
 require('dotenv').config();
 
 const app = express();

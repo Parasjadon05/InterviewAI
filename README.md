@@ -2,10 +2,9 @@
 
 [![React](https://img.shields.io/badge/React-18.3.1-blue.svg)](https://reactjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.5.3-blue.svg)](https://www.typescriptlang.org/)
-[![MediaPipe](https://img.shields.io/badge/MediaPipe-Latest-green.svg)](https://mediapipe.dev/)
-[![TensorFlow.js](https://img.shields.io/badge/TensorFlow.js-4.22.0-orange.svg)](https://www.tensorflow.org/js)
+[![Node.js](https://img.shields.io/badge/Node.js-16+-green.svg)](https://nodejs.org/)
 
-AI-powered interview practice platform that generates role-specific questions, analyzes body language in real-time using computer vision, and provides comprehensive feedback to help job seekers ace their interviews.
+AI-powered interview practice platform that generates role-specific questions and provides comprehensive feedback to help job seekers ace their interviews.
 
 ## 🌟 Features
 
@@ -14,22 +13,15 @@ AI-powered interview practice platform that generates role-specific questions, a
 - **Resume Analysis**: Upload your resume for personalized question generation
 - **Multiple Role Support**: Software Engineer, Data Scientist, Product Manager, and more
 
-### 👁️ Advanced Body Language Analysis
-- **Real-time Face Mesh Detection**: Using MediaPipe for 468 facial landmarks
-- **Eye Contact Tracking**: Iris landmark detection with 10-frame smoothing
-- **Speech Detection**: Mouth aspect ratio analysis for speaking patterns
-- **Head Pose Analysis**: Engagement and attention level tracking
-- **Hand Gesture Recognition**: Professional gesture analysis
-
 ### 🎥 Interactive Interview Sessions
 - **Video/Audio Recording**: Record practice sessions for review
 - **Real-time Transcription**: Speech-to-text with feedback generation
-- **AI Feedback**: Detailed analysis of responses and body language
+- **AI Feedback**: Detailed analysis of responses
 - **Progress Tracking**: Historical data and improvement metrics
 
 ### 📊 Comprehensive Analytics
 - **Performance Dashboard**: Visual analytics of interview performance
-- **Body Language Metrics**: Eye contact percentage, speaking time, posture analysis
+- **Audio Metrics**: Speaking pace, filler words, pause analysis
 - **PDF Reports**: Exportable detailed feedback reports
 - **Historical Tracking**: View past interviews and improvement trends
 
@@ -39,7 +31,6 @@ AI-powered interview practice platform that generates role-specific questions, a
 - **React 18** with TypeScript
 - **Vite** for fast development
 - **Tailwind CSS** + **shadcn/ui** for modern UI
-- **MediaPipe** & **TensorFlow.js** for computer vision
 - **React Query** for state management
 - **React Router** for navigation
 
@@ -50,10 +41,10 @@ AI-powered interview practice platform that generates role-specific questions, a
 - **Multer** for file uploads
 - **PDF parsing** for resume analysis
 
-### Computer Vision
-- **MediaPipe Face Mesh**: 468 facial landmarks
-- **TensorFlow.js Models**: Face detection, pose estimation, hand tracking
-- **Real-time Analysis**: Eye contact, speech patterns, engagement metrics
+### Audio Processing
+- **WebRTC**: Real-time audio recording
+- **AssemblyAI**: Speech-to-text transcription
+- **Audio Analysis**: Speaking pace, filler words, pause detection
 
 ## 🚀 Quick Start
 
@@ -109,32 +100,28 @@ AI-powered interview practice platform that generates role-specific questions, a
 
 1. **Select Role**: Choose your target interview role (Software Engineer, Data Scientist, etc.)
 2. **Upload Resume** (Optional): Upload your resume for personalized questions
-3. **Start Interview**: Enable camera/microphone for real-time analysis
-4. **Practice**: Answer AI-generated questions while being analyzed
-5. **Review**: Get detailed feedback on responses and body language
+3. **Start Interview**: Enable camera/microphone for recording
+4. **Practice**: Answer AI-generated questions
+5. **Review**: Get detailed feedback on responses and audio metrics
 6. **Improve**: Track progress over multiple sessions
 
-## 🔬 Body Language Analysis Details
+## 🔬 Audio Analysis Details
 
-### Eye Contact Detection
-- Tracks iris position relative to face center using MediaPipe landmarks 468-477
-- Uses 10-frame moving average for smooth detection
-- Calculates percentage of time maintaining proper eye contact
+### Speech Transcription
+- Real-time audio recording and transcription using AssemblyAI
+- High-accuracy speech-to-text conversion
+- Support for multiple audio formats
 
-### Speaking Analysis
-- Monitors mouth movement using outer mouth landmarks
-- Calculates mouth aspect ratio to detect speaking
-- Tracks speaking time and patterns throughout interview
+### Speaking Metrics
+- **Speaking Pace**: Words per minute analysis
+- **Filler Words**: Detection of "um", "uh", "like", etc.
+- **Pause Analysis**: Identification of speaking pauses
+- **Duration Tracking**: Total speaking time per question
 
-### Head Pose Tracking
-- Measures head tilt and rotation for engagement analysis
-- Detects attention level through head positioning
-- Provides feedback on posture and presence
-
-### Gesture Recognition
-- Analyzes hand movements and positioning
-- Detects professional vs. distracting gestures
-- Provides recommendations for improvement
+### Audio Quality
+- Automatic audio format conversion
+- Noise reduction and audio enhancement
+- Support for various microphone types
 
 ## 📁 Project Structure
 

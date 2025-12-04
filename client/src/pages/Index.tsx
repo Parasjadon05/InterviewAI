@@ -71,24 +71,21 @@ const Index = ({ showLandingPage, setShowLandingPage }: IndexProps) => {
 
   const handleRoleSelect = async (role: string) => {
     setSelectedRole(role);
+    setLoadingQuestions(true);
+    const formData = new FormData();
     if (uploadedFile) {
-      setLoadingQuestions(true);
-      const formData = new FormData();
       formData.append('file', uploadedFile);
-      formData.append('role', role);
-      try {
-        const res = await axios.post('/generate-questions', formData, {
-          baseURL: 'http://localhost:5001',
-          headers: { 'Content-Type': 'multipart/form-data' },
-        });
-        setQuestions(res.data.questions);
-        setCurrentStep('interview');
-      } catch (err) {
-        setQuestions([]);
-        alert('Failed to generate questions. Please try again.');
-      } finally {
-        setLoadingQuestions(false);
-      }
+    }
+    formData.append('role', role);
+    try {
+      const res = await axios.post('http://localhost:5001/generate-questions', formData);
+      setQuestions(res.data.questions);
+      setCurrentStep('interview');
+    } catch (err) {
+      setQuestions([]);
+      alert('Failed to generate questions. Please try again.');
+    } finally {
+      setLoadingQuestions(false);
     }
     setIsSidebarOpen(false);
   };

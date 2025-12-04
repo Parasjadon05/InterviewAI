@@ -8,6 +8,7 @@ import { useState, useEffect, useRef } from "react";
 import { jsPDF } from "jspdf";
 import html2pdf from "html2pdf.js";
 import PDFReport from "./PDFReport";
+import BodyLanguageAnalysis from "./BodyLanguageAnalysis";
 
 interface AnalysisDashboardProps {
   interviewData: any;
@@ -494,38 +495,42 @@ const AnalysisDashboard = ({ interviewData, role }: AnalysisDashboardProps) => {
           </TabsContent>
 
           <TabsContent value="body" className="space-y-6 lg:space-y-8 mt-6 lg:mt-8">
-            <Card className="bg-white/90 backdrop-blur-sm border-0 shadow-lg hover:shadow-xl transition-all duration-300">
-              <CardHeader className="pb-6">
-                <CardTitle className="flex items-center text-lg lg:text-xl">
-                  <div className="w-6 h-6 lg:w-8 lg:h-8 bg-blue-100 rounded-full flex items-center justify-center mr-3">
-                    <Eye className="h-3 w-3 lg:h-4 lg:w-4 text-blue-600" />
-                  </div>
-                  Body Language & Visual Presence
-                </CardTitle>
-                <CardDescription className="text-sm lg:text-base">
-                  Analysis of your non-verbal communication and professional presentation
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4 lg:space-y-6">
-                  {/* Show summary string if present */}
-                  {analysis.bodyLanguageAnalysis.summary && (
-                    <div className="p-4 bg-blue-50 rounded-lg border border-blue-200 text-blue-900 text-sm lg:text-base font-medium mb-4">
-                      {analysis.bodyLanguageAnalysis.summary}
+            {interviewData.bodyLanguageAnalysis ? (
+              <BodyLanguageAnalysis analysis={interviewData.bodyLanguageAnalysis} />
+            ) : (
+              <Card className="bg-white/90 backdrop-blur-sm border-0 shadow-lg hover:shadow-xl transition-all duration-300">
+                <CardHeader className="pb-6">
+                  <CardTitle className="flex items-center text-lg lg:text-xl">
+                    <div className="w-6 h-6 lg:w-8 lg:h-8 bg-blue-100 rounded-full flex items-center justify-center mr-3">
+                      <Eye className="h-3 w-3 lg:h-4 lg:w-4 text-blue-600" />
                     </div>
-                  )}
-                  {Object.entries(analysis.bodyLanguageAnalysis)
-                    .filter(([key]) => key !== 'summary')
-                    .map(([key, value]) => (
-                  <div key={key} className="space-y-3 p-3 lg:p-4 bg-gray-50 rounded-lg">
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs lg:text-sm font-semibold capitalize text-gray-700">{key.replace(/([A-Z])/g, ' $1')}</span>
-                      <span className={`text-xs lg:text-sm font-bold ${getScoreColor(Number(value ?? 0))}`}>{String(value ?? 'N/A')}%</span>
+                    Body Language & Visual Presence
+                  </CardTitle>
+                  <CardDescription className="text-sm lg:text-base">
+                    Analysis of your non-verbal communication and professional presentation
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4 lg:space-y-6">
+                    {/* Show summary string if present */}
+                    {analysis.bodyLanguageAnalysis.summary && (
+                      <div className="p-4 bg-blue-50 rounded-lg border border-blue-200 text-blue-900 text-sm lg:text-base font-medium mb-4">
+                        {analysis.bodyLanguageAnalysis.summary}
+                      </div>
+                    )}
+                    {Object.entries(analysis.bodyLanguageAnalysis)
+                      .filter(([key]) => key !== 'summary')
+                      .map(([key, value]) => (
+                    <div key={key} className="space-y-3 p-3 lg:p-4 bg-gray-50 rounded-lg">
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs lg:text-sm font-semibold capitalize text-gray-700">{key.replace(/([A-Z])/g, ' $1')}</span>
+                        <span className={`text-xs lg:text-sm font-bold ${getScoreColor(Number(value ?? 0))}`}>{String(value ?? 'N/A')}%</span>
+                      </div>
+                      <Progress value={Number(value ?? 0)} className="w-full h-2" />
                     </div>
-                    <Progress value={Number(value ?? 0)} className="w-full h-2" />
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
+                  ))}
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
 
           <TabsContent value="responses" className="space-y-6 lg:space-y-8 mt-6 lg:mt-8">

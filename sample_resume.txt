@@ -1,0 +1,5 @@
+John Doe
+Software Engineer
+5 years experience in React, Node.js, and Python
+Worked at Google and Microsoft
+Skills: JavaScript, TypeScript, AWS, Docker

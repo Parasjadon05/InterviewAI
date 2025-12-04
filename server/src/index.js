@@ -5,16 +5,35 @@ const pdfParse = require('pdf-parse');
 const mammoth = require('mammoth');
 const path = require('path');
 const fs = require('fs');
-const { generateInterviewQuestions } = require('./services/questionGenerator');
 const { transcribeAudioFile, getAudioDuration, calculateAudioMetrics } = require('./services/transcriptionService');
 const { getLLMFeedback, getBatchLLMFeedback } = require('./services/llmFeedbackService');
 const { transcribeWebmWithConversion } = require('./transcribeWithConversion');
+const { generateInterviewQuestions, generateRoleBasedQuestions } = require('../../questionGenerator');
 require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 5001;
 
-app.use(cors());
+// Explicit CORS configuration to satisfy strict browser checks
+const corsOptions = {
+  origin: (origin, cb) => cb(null, true),
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: false,
+};
+
+app.use(cors(corsOptions));
+// Ensure headers are present for any route and short-circuit preflight
+app.use((req, res, next) => {
+  const origin = req.headers.origin || '*';
+  const requestedHeaders = req.headers['access-control-request-headers'] || 'Content-Type, Authorization';
+  res.header('Access-Control-Allow-Origin', origin);
+  res.header('Vary', 'Origin');
+  res.header('Access-Control-Allow-Headers', requestedHeaders);
+  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  if (req.method === 'OPTIONS') return res.sendStatus(200);
+  next();
+});
 app.use(express.json({ limit: '5mb' }));
 
 // Set up multer for file uploads
@@ -29,38 +48,47 @@ app.get('/', (req, res) => {
 app.post('/generate-questions', upload.single('file'), async (req, res) => {
   const { role } = req.body;
   const file = req.file;
-  if (!file || !role) {
-    return res.status(400).json({ error: 'Missing file or role' });
-  }
-
-  let resumeText = '';
+  
   try {
-    const ext = path.extname(file.originalname).toLowerCase();
-    if (ext === '.pdf') {
-      const dataBuffer = fs.readFileSync(file.path);
-      const data = await pdfParse(dataBuffer);
-      resumeText = data.text;
-    } else if (ext === '.docx') {
-      const data = await mammoth.extractRawText({ path: file.path });
-      resumeText = data.value;
-    } else {
-      // Unsupported file type
+    let resumeText = '';
+    
+    // Parse resume file if uploaded
+    if (file && fs.existsSync(file.path)) {
+      const ext = path.extname(file.originalname || file.path).toLowerCase();
+      
+      if (ext === '.pdf') {
+        const data = await pdfParse(fs.readFileSync(file.path));
+        resumeText = data.text;
+      } else if (ext === '.docx') {
+        const result = await mammoth.extractRawText({ path: file.path });
+        resumeText = result.value;
+      } else if (ext === '.txt' || ext === '') {
+        resumeText = fs.readFileSync(file.path, 'utf-8');
+      }
+      
+      // Clean up uploaded file
       fs.unlinkSync(file.path);
-      return res.status(400).json({ error: 'Unsupported file type. Please upload a PDF or DOCX.' });
     }
-    // Clean up uploaded file
-    fs.unlinkSync(file.path);
-
-    if (!resumeText.trim()) {
-      return res.status(400).json({ error: 'Could not extract text from resume.' });
+    
+    // Generate questions based on resume and role, or just role if no resume
+    let questions;
+    if (resumeText && resumeText.trim().length > 0) {
+      questions = await generateInterviewQuestions(resumeText, role, 10);
+    } else {
+      questions = await generateRoleBasedQuestions(role, 10);
     }
-
-    const questions = await generateInterviewQuestions(resumeText, role);
+    
     res.json({ questions });
   } catch (error) {
-    if (file && fs.existsSync(file.path)) fs.unlinkSync(file.path);
     console.error('Error generating questions:', error);
-    res.status(500).json({ error: 'Failed to generate questions' });
+    // Fallback to role-based questions if generation fails
+    try {
+      const questions = await generateRoleBasedQuestions(role || 'Software Engineer', 10);
+      res.json({ questions });
+    } catch (fallbackError) {
+      console.error('Fallback question generation also failed:', fallbackError);
+      res.status(500).json({ error: 'Failed to generate questions' });
+    }
   }
 });
 

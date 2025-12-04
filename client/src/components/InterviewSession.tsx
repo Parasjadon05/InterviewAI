@@ -1,15 +1,13 @@
 import { useState, useRef, useEffect } from "react";
 import axios from "axios";
+import { useBodyLanguageAnalysis } from "../hooks/useBodyLanguageAnalysis";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { Video, VideoOff, Mic, MicOff, Volume2, Info, Eye } from "lucide-react";
+import { Video, VideoOff, Mic, MicOff, Volume2, Info } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import AnalysisDashboard from "./AnalysisDashboard";
-import useBodyLanguageAnalysis from '../hooks/useBodyLanguageAnalysis';
-import FaceMeshDebug from './FaceMeshDebug';
-import { MediaPipeTests } from '@/utils/mediapipeTest';
 import { appwriteDatabases, APPWRITE_DB_ID, APPWRITE_FEEDBACK_COLLECTION_ID } from "@/lib/appwrite";
 import { ID } from "appwrite";
 import { useAuth } from "@/context/AuthContext";
@@ -29,7 +27,12 @@ const InterviewSession = ({ role, questions, loadingQuestions, onInterviewComple
   const [isInterviewStarted, setIsInterviewStarted] = useState(false);
   const [isAISpeaking, setIsAISpeaking] = useState(false);
   const [isComplete, setIsComplete] = useState(false);
+  const [interviewCompleted, setInterviewCompleted] = useState(false);
   const [showTips, setShowTips] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  
+  // Body language analysis
+  const { analyzeVideo, isAnalyzing: isAnalyzingBodyLanguage, analysisResult: bodyLanguageResult } = useBodyLanguageAnalysis();
   const [isRecording, setIsRecording] = useState(false);
   const [audioBlobs, setAudioBlobs] = useState<(Blob | null)[]>(Array(questions.length).fill(null));
   const [transcripts, setTranscripts] = useState<string[]>(Array(questions.length).fill(""));
@@ -39,8 +42,7 @@ const InterviewSession = ({ role, questions, loadingQuestions, onInterviewComple
   const [autoRecordingReady, setAutoRecordingReady] = useState(false);
   const [batchFeedback, setBatchFeedback] = useState<string>("");
   const [isBatchLoading, setIsBatchLoading] = useState(false);
-  const [showDebug, setShowDebug] = useState(false);
-  const [testResults, setTestResults] = useState<any>(null);
+  // MediaPipe debug and test states removed
   
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -119,80 +121,33 @@ const InterviewSession = ({ role, questions, loadingQuestions, onInterviewComple
     }
   };
 
-  // Audio recording handlers
+  // Audio recording handlers - simplified for auto-recording
   const startRecording = async () => {
     console.log('Starting recording for question', currentQuestion);
+    
     if (!navigator.mediaDevices) return;
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    const recorder = new MediaRecorder(stream);
-    mediaRecorderRef.current = recorder;
-    audioChunksRef.current = [];
-    recorder.ondataavailable = (e) => {
-      audioChunksRef.current.push(e.data);
-    };
-    recorder.onstop = async () => {
-      console.log('Recording stopped for question', currentQuestion);
-      const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-      console.log('Audio blob size:', audioBlob.size);
-      if (audioBlob.size === 0) {
-        setCurrentTranscript('No audio recorded.');
-        return;
-      }
-      setCurrentAudioUrl(URL.createObjectURL(audioBlob));
-      setAudioBlobs((prev) => {
-        const updated = [...prev];
-        updated[currentQuestion] = audioBlob;
-        return updated;
+    
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
+      audioChunksRef.current = [];
+      
+      recorder.ondataavailable = (e) => {
+        audioChunksRef.current.push(e.data);
+      };
+      
+      recorder.start();
+      setIsRecording(true);
+      console.log('Recording started for question', currentQuestion);
+    } catch (error) {
+      console.error('Error starting recording:', error);
+      toast({
+        title: "Recording failed",
+        description: "Could not start audio recording",
+        variant: "destructive",
       });
-      const duration = await getAudioDuration(audioBlob);
-      setDurations((prev) => {
-        const updated = [...prev];
-        updated[currentQuestion] = duration;
-        return updated;
-      });
-      const formData = new FormData();
-      formData.append('audio', audioBlob, 'answer.webm');
-      // Upload to backend for transcription and metrics
-      try {
-        const res = await axios.post('http://localhost:5001/transcribe-audio', formData, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-        });
-        console.log('Transcribe audio response:', res.data);
-        if (!res.data.transcript || res.data.transcript.trim() === '') {
-          console.warn('Transcript is empty after transcription!');
-          setCurrentTranscript('Transcription failed or empty.');
-          return;
-        }
-        setCurrentTranscript(res.data.transcript);
-        setTranscripts((prev) => {
-          const updated = [...prev];
-          updated[currentQuestion] = res.data.transcript;
-          return updated;
-        });
-        // Save Q&A pair only if transcript is valid
-        setQaPairs((prev) => {
-          const updated = [...prev];
-          updated[currentQuestion] = {
-            question: questions[currentQuestion],
-            transcript: res.data.transcript,
-          };
-          qaPairsRef.current = updated; // keep ref in sync
-          console.log('Saving Q&A pair:', updated[currentQuestion]);
-          console.log('Current qaPairs state:', updated);
-          return updated;
-        });
-        // Save audio metrics
-        setAudioMetrics((prev) => {
-          const updated = [...prev];
-          updated[currentQuestion] = res.data.metrics;
-          return updated;
-        });
-      } catch (err) {
-        setCurrentTranscript('Transcription failed.');
-      }
-    };
-    recorder.start();
-    setIsRecording(true);
+    }
   };
 
   // Helper to get audio duration from a Blob
@@ -206,8 +161,155 @@ const InterviewSession = ({ role, questions, loadingQuestions, onInterviewComple
     });
   }
 
-  // Integrate body language analysis hook
-  const { latestMetrics, resetMetrics } = useBodyLanguageAnalysis(videoRef, isInterviewStarted && isVideoEnabled);
+  // Convert WebM to WAV format for AssemblyAI compatibility
+  const convertToWav = async (webmBlob: Blob): Promise<Blob> => {
+    return new Promise((resolve, reject) => {
+      console.log('Starting audio conversion, input size:', webmBlob.size);
+      
+      try {
+        const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const fileReader = new FileReader();
+        
+        fileReader.onload = async () => {
+          try {
+            console.log('FileReader loaded, decoding audio data...');
+            const arrayBuffer = fileReader.result as ArrayBuffer;
+            const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+            console.log('Audio decoded successfully, converting to WAV...');
+            
+            // Convert to WAV format
+            const wavBlob = audioBufferToWav(audioBuffer);
+            console.log('WAV conversion completed, output size:', wavBlob.size);
+            resolve(wavBlob);
+          } catch (error) {
+            console.error('Error converting audio:', error);
+            // Fallback to original blob if conversion fails
+            console.log('Falling back to original blob');
+            resolve(webmBlob);
+          }
+        };
+        
+        fileReader.onerror = () => {
+          console.error('FileReader error:', fileReader.error);
+          reject(fileReader.error);
+        };
+        
+        fileReader.readAsArrayBuffer(webmBlob);
+      } catch (error) {
+        console.error('Error setting up audio conversion:', error);
+        // Fallback to original blob if setup fails
+        resolve(webmBlob);
+      }
+    });
+  };
+
+  // Convert AudioBuffer to WAV Blob
+  const audioBufferToWav = (audioBuffer: AudioBuffer): Blob => {
+    const numberOfChannels = audioBuffer.numberOfChannels;
+    const sampleRate = audioBuffer.sampleRate;
+    const format = 1; // PCM
+    const bitDepth = 16;
+    
+    const bytesPerSample = bitDepth / 8;
+    const blockAlign = numberOfChannels * bytesPerSample;
+    const byteRate = sampleRate * blockAlign;
+    const dataSize = audioBuffer.length * blockAlign;
+    const bufferSize = 44 + dataSize;
+    
+    const buffer = new ArrayBuffer(bufferSize);
+    const view = new DataView(buffer);
+    
+    // WAV header
+    const writeString = (offset: number, string: string) => {
+      for (let i = 0; i < string.length; i++) {
+        view.setUint8(offset + i, string.charCodeAt(i));
+      }
+    };
+    
+    writeString(0, 'RIFF');
+    view.setUint32(4, bufferSize - 8, true);
+    writeString(8, 'WAVE');
+    writeString(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, format, true);
+    view.setUint16(22, numberOfChannels, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, byteRate, true);
+    view.setUint16(32, blockAlign, true);
+    view.setUint16(34, bitDepth, true);
+    writeString(36, 'data');
+    view.setUint32(40, dataSize, true);
+    
+    // Convert audio data
+    let offset = 44;
+    for (let i = 0; i < audioBuffer.length; i++) {
+      for (let channel = 0; channel < numberOfChannels; channel++) {
+        const sample = Math.max(-1, Math.min(1, audioBuffer.getChannelData(channel)[i]));
+        view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7FFF, true);
+        offset += 2;
+      }
+    }
+    
+    return new Blob([buffer], { type: 'audio/wav' });
+  };
+
+  // Handle transcription for a specific question (supports concurrent transcriptions)
+  const transcribeQuestion = async (questionIdx: number, audioBlob: Blob): Promise<void> => {
+    console.log(`Starting transcription for question ${questionIdx}`);
+    console.log(`Audio blob size: ${audioBlob.size}`);
+    
+    try {
+      // Send original WebM file directly (simplified approach)
+      console.log(`Sending original WebM file for question ${questionIdx}`);
+      
+      const formData = new FormData();
+      formData.append('audio', audioBlob, `answer_${questionIdx}.webm`);
+      
+      console.log(`Sending transcription request for question ${questionIdx}`);
+      const res = await axios.post('http://localhost:5001/transcribe-audio', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      
+      console.log(`Transcription completed for question ${questionIdx}:`, res.data);
+      
+      if (res.data.transcript && res.data.transcript.trim() !== '') {
+        // Update transcript
+        setTranscripts((prev) => {
+          const updated = [...prev];
+          updated[questionIdx] = res.data.transcript;
+          return updated;
+        });
+        
+        // Update Q&A pair
+        setQaPairs((prev) => {
+          const updated = [...prev];
+          updated[questionIdx] = {
+            question: questions[questionIdx],
+            transcript: res.data.transcript,
+          };
+          qaPairsRef.current = updated;
+          console.log(`Updated Q&A pair for question ${questionIdx}:`, updated[questionIdx]);
+          console.log('Current qaPairsRef:', qaPairsRef.current);
+          return updated;
+        });
+        
+        // Update audio metrics
+        setAudioMetrics((prev) => {
+          const updated = [...prev];
+          updated[questionIdx] = res.data.metrics;
+          return updated;
+        });
+        
+        console.log(`Successfully processed question ${questionIdx}`);
+      } else {
+        console.warn(`Empty transcript for question ${questionIdx}`);
+      }
+    } catch (error) {
+      console.error(`Transcription failed for question ${questionIdx}:`, error);
+    }
+  };
+
+  // Body language analysis removed - no longer using MediaPipe
 
   // Helper to handle recording, transcription, and saving for a question
   const handleStopAndTranscribe = async (questionIdx: number, audioBlob: Blob) => {
@@ -264,24 +366,19 @@ const InterviewSession = ({ role, questions, loadingQuestions, onInterviewComple
     }
   };
 
-  // Refactored stopRecording to return the audioBlob
-  const stopRecordingAndGetAudio = async () => {
+  // Stop recording and return the audio blob
+  const stopRecordingAndGetAudio = async (): Promise<Blob | null> => {
     return new Promise<Blob | null>((resolve) => {
-      if (mediaRecorderRef.current) {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
         mediaRecorderRef.current.onstop = () => {
           const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
           setIsRecording(false);
-          // Save the latest body language metrics for this question
-          setBodyLanguageMetrics((prev) => {
-            const updated = [...prev];
-            updated[currentQuestion] = latestMetrics;
-            return updated;
-          });
-          resetMetrics();
+          console.log('Recording stopped, audio blob size:', audioBlob.size);
           resolve(audioBlob);
         };
         mediaRecorderRef.current.stop();
       } else {
+        setIsRecording(false);
         resolve(null);
       }
     });
@@ -298,8 +395,10 @@ const InterviewSession = ({ role, questions, loadingQuestions, onInterviewComple
       utterance.onend = () => {
         setIsAISpeaking(false);
         setAutoRecordingReady(true); // Ready to start recording
+        console.log('AI finished speaking, ready to start recording');
       };
       speechSynthesis.speak(utterance);
+      console.log('AI started speaking question:', questionText);
     } else {
       setIsAISpeaking(false);
       setAutoRecordingReady(true);
@@ -308,46 +407,141 @@ const InterviewSession = ({ role, questions, loadingQuestions, onInterviewComple
 
   // Start recording automatically after AI finishes speaking
   useEffect(() => {
-    if (autoRecordingReady) {
+    if (autoRecordingReady && !isRecording) {
       startRecording();
       setAutoRecordingReady(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoRecordingReady]);
+  }, [autoRecordingReady, isRecording]);
 
-  // On Next button
+  // On Next button - simple flow: stop recording, move to next, transcribe previous
   const nextQuestion = async () => {
-    // 1. Stop recording and get audio
+    console.log(`Moving from question ${currentQuestion} to next`);
+    
+    // Prevent multiple calls
+    if (isProcessing) {
+      console.log('Already processing, skipping duplicate call');
+      return;
+    }
+    
+    setIsProcessing(true);
+    
+    // 1. Stop current recording and get audio
     const audioBlob = await stopRecordingAndGetAudio();
-    if (!audioBlob) return;
-    // 2. Save audio blob for current question
-    setAudioBlobs((prev) => {
-      const updated = [...prev];
-      updated[currentQuestion] = audioBlob;
-      return updated;
-    });
-    // 3. If not last question, move to next question immediately and transcribe in background
-    if (currentQuestion < questions.length - 1) {
-      const prevQuestion = currentQuestion;
-      setCurrentQuestion(prev => prev + 1);
-      setTimeout(() => {
-        speakQuestion(questions[prevQuestion + 1]);
-      }, 300);
-      // Transcribe previous answer in background
-      transcriptionPromisesRef.current.push(handleStopAndTranscribe(prevQuestion, audioBlob));
+    console.log(`Audio blob received:`, audioBlob ? `size: ${audioBlob.size}` : 'null');
+    
+    // 2. Save audio blob for current question (if valid)
+    if (audioBlob && audioBlob.size > 0) {
+      console.log(`Saving audio blob for question ${currentQuestion}`);
+      setAudioBlobs((prev) => {
+        const updated = [...prev];
+        updated[currentQuestion] = audioBlob;
+        return updated;
+      });
+      
+      console.log(`Getting audio duration for question ${currentQuestion}`);
+      // Make duration calculation non-blocking
+      getAudioDuration(audioBlob).then(duration => {
+        setDurations((prev) => {
+          const updated = [...prev];
+          updated[currentQuestion] = duration;
+          return updated;
+        });
+        console.log(`Audio duration set for question ${currentQuestion}: ${duration}s`);
+      }).catch(error => {
+        console.error(`Failed to get audio duration for question ${currentQuestion}:`, error);
+        // Set a default duration if it fails
+        setDurations((prev) => {
+          const updated = [...prev];
+          updated[currentQuestion] = 0;
+          return updated;
+        });
+      });
+      
+      console.log(`Setting audio URL for question ${currentQuestion}`);
+      setCurrentAudioUrl(URL.createObjectURL(audioBlob));
+      
+      // 3. Start transcription for current question (non-blocking)
+      console.log(`Starting transcription for question ${currentQuestion}`);
+      transcribeQuestion(currentQuestion, audioBlob).catch(error => {
+        console.error(`Transcription failed for question ${currentQuestion}:`, error);
+      });
+      console.log(`Transcription started for question ${currentQuestion}`);
     } else {
-      // Last question: show spinner, transcribe, then complete
-      setIsTranscribingLast(true);
-      await handleStopAndTranscribe(currentQuestion, audioBlob); // Wait for last transcript to be added
-      setIsTranscribingLast(false);
-    setIsComplete(true);
-    setIsInterviewStarted(false);
-    setIsAISpeaking(false);
-    setIsRecording(false);
-    setIsBatchLoading(true);
+      console.log(`No valid audio blob for question ${currentQuestion}, skipping audio processing`);
+    }
+    
+    // 4. Always move to next question
+    console.log(`Checking if we can move to next question. Current: ${currentQuestion}, Total: ${questions.length}`);
+    if (currentQuestion < questions.length - 1) {
+      const nextQuestionIndex = currentQuestion + 1;
+      console.log(`Moving from question ${currentQuestion} to question ${nextQuestionIndex}`);
+      setCurrentQuestion(nextQuestionIndex);
+      setCurrentTranscript('');
+      setCurrentAudioUrl('');
+      console.log(`Question state updated to ${nextQuestionIndex}`);
+      
+      // 5. Start recording for next question after AI speaks
+      setTimeout(() => {
+        console.log(`Speaking question ${nextQuestionIndex}: ${questions[nextQuestionIndex]}`);
+        speakQuestion(questions[nextQuestionIndex]);
+      }, 500);
+    } else {
+      // Interview completed - wait for all transcriptions to finish
+      console.log('Interview completed, waiting for all transcriptions to finish...');
+      setInterviewCompleted(true);
+      
+      // Wait for all transcriptions to complete before processing final feedback
+      const waitForAllTranscriptions = setInterval(() => {
+        const allTranscribed = questions.every((_, idx) => 
+          transcripts[idx] && transcripts[idx].trim() !== ''
+        );
+        
+        console.log('Checking transcriptions:', transcripts.map((t, i) => `Q${i}: ${t ? 'done' : 'pending'}`));
+        
+        if (allTranscribed) {
+          clearInterval(waitForAllTranscriptions);
+          console.log('All transcriptions completed, processing final feedback...');
+          setIsComplete(true);
+          setIsInterviewStarted(false);
+          setIsAISpeaking(false);
+          setIsRecording(false);
+          setIsBatchLoading(true);
+          
+          // Process final batch feedback
+          processFinalFeedback();
+        }
+      }, 2000); // Check every 2 seconds
+    }
+    
+    // Reset processing state
+    console.log('Resetting processing state');
+    setIsProcessing(false);
+  };
+
+  // Process final feedback after interview completion
+  const processFinalFeedback = async () => {
     console.log('qaPairs before filtering:', qaPairsRef.current);
-    const filteredQaPairs = qaPairsRef.current.filter(pair => pair && pair.question && pair.transcript !== undefined && pair.transcript !== null);
+    console.log('transcripts state:', transcripts);
+    console.log('questions:', questions);
+    
+    const filteredQaPairs = qaPairsRef.current.filter(pair => 
+      pair && pair.question && pair.transcript !== undefined && pair.transcript !== null
+    );
     console.log('Filtered Q&A pairs before sending:', filteredQaPairs);
+    
+    // Perform body language analysis if video is available
+    let bodyLanguageAnalysis = null;
+    if (videoRef.current) {
+      console.log('Starting body language analysis...');
+      try {
+        bodyLanguageAnalysis = await analyzeVideo(videoRef.current);
+        console.log('Body language analysis completed:', bodyLanguageAnalysis);
+      } catch (error) {
+        console.error('Body language analysis failed:', error);
+      }
+    }
+    
     if (filteredQaPairs.length === 0) {
       toast({
         title: "No valid answers",
@@ -357,6 +551,8 @@ const InterviewSession = ({ role, questions, loadingQuestions, onInterviewComple
       setIsBatchLoading(false);
       return;
     }
+    
+    // Process final batch feedback
     let realFeedback = null;
     try {
       const filteredAudioMetrics = audioMetrics.filter((m, idx) => filteredQaPairs[idx]);
@@ -368,40 +564,43 @@ const InterviewSession = ({ role, questions, loadingQuestions, onInterviewComple
       });
       setBatchFeedback(res.data.feedback);
       realFeedback = res.data.feedback;
-        // Debug log after getting feedback
-        console.log('After setting realFeedback:', realFeedback);
-        console.log('user:', user, 'realFeedback:', realFeedback);
-        // Save feedback to Appwrite if user is logged in
-        if (user && realFeedback) {
-          try {
-            console.log('Attempting to save feedback to Appwrite:', {
-              user,
-              APPWRITE_DB_ID,
-              APPWRITE_FEEDBACK_COLLECTION_ID,
-              feedback: realFeedback,
+      
+      // Debug log after getting feedback
+      console.log('After setting realFeedback:', realFeedback);
+      console.log('user:', user, 'realFeedback:', realFeedback);
+      
+      // Save feedback to Appwrite if user is logged in
+      if (user && realFeedback) {
+        try {
+          console.log('Attempting to save feedback to Appwrite:', {
+            user,
+            APPWRITE_DB_ID,
+            APPWRITE_FEEDBACK_COLLECTION_ID,
+            feedback: realFeedback,
+            createdAt: new Date().toISOString(),
+            role: role
+          });
+          const result = await appwriteDatabases.createDocument(
+            APPWRITE_DB_ID,
+            APPWRITE_FEEDBACK_COLLECTION_ID,
+            ID.unique(),
+            {
+              userId: user.$id,
               createdAt: new Date().toISOString(),
-              role: role
-            });
-            const result = await appwriteDatabases.createDocument(
-              APPWRITE_DB_ID,
-              APPWRITE_FEEDBACK_COLLECTION_ID,
-              ID.unique(),
-              {
-                userId: user.$id,
-                createdAt: new Date().toISOString(),
-                role: role,
-                feedback: JSON.stringify(realFeedback),
-                summary: realFeedback.overallSummary || "",
-              }
-            );
-            console.log('Successfully saved feedback to Appwrite:', result);
-          } catch (err) {
-            console.error("Failed to save feedback to Appwrite", err);
-          }
+              role: role,
+              feedback: JSON.stringify(realFeedback),
+              summary: realFeedback.overallSummary || "",
+            }
+          );
+          console.log('Successfully saved feedback to Appwrite:', result);
+        } catch (err) {
+          console.error("Failed to save feedback to Appwrite", err);
         }
+      }
     } catch (err) {
       setBatchFeedback('Failed to get batch feedback.');
     }
+    
     setIsBatchLoading(false);
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
@@ -410,26 +609,27 @@ const InterviewSession = ({ role, questions, loadingQuestions, onInterviewComple
       title: "Interview completed!",
       description: "Analyzing your video performance...",
     });
-      const endNow = Date.now();
-      setInterviewEndTime(endNow);
-      console.log('Interview ended at', endNow);
+    const endNow = Date.now();
+    setInterviewEndTime(endNow);
+    console.log('Interview ended at', endNow);
+    
     setTimeout(() => {
       if (realFeedback) {
         const filteredAudioMetrics = audioMetrics.filter((m, idx) => filteredQaPairs[idx]);
         const filteredBodyLanguageMetrics = bodyLanguageMetrics.filter((m, idx) => filteredQaPairs[idx]);
-          // Use endNow directly instead of interviewEndTime state
-          const interviewDurationSec = interviewStartTime && endNow ? Math.round((endNow - interviewStartTime) / 1000) : null;
-          console.log('Duration sent to dashboard:', interviewDurationSec);
-        onInterviewComplete({
-          ...realFeedback,
-          bodyLanguageMetrics: filteredBodyLanguageMetrics,
-          audioMetrics: filteredAudioMetrics,
-            interviewDurationSec,
-            durations, // <-- add this
-        });
+        // Use endNow directly instead of interviewEndTime state
+        const interviewDurationSec = interviewStartTime && endNow ? Math.round((endNow - interviewStartTime) / 1000) : null;
+        console.log('Duration sent to dashboard:', interviewDurationSec);
+              onInterviewComplete({
+                ...realFeedback,
+                bodyLanguageMetrics: filteredBodyLanguageMetrics,
+                audioMetrics: filteredAudioMetrics,
+                interviewDurationSec,
+                durations,
+                bodyLanguageAnalysis,
+              });
       }
     }, 2000);
-    }
   };
 
   // Send transcript to LLM for feedback
@@ -487,39 +687,7 @@ const InterviewSession = ({ role, questions, loadingQuestions, onInterviewComple
     });
   };
 
-  const runMediaPipeTests = async () => {
-    try {
-      toast({
-        title: "Testing MediaPipe models...",
-        description: "Check console for detailed results",
-      });
-      
-      const results = await MediaPipeTests.testModels();
-      setTestResults(results);
-      
-      if (results.success) {
-        toast({
-          title: "✅ MediaPipe tests passed!",
-          description: "All models loaded successfully",
-        });
-      } else {
-        toast({
-          title: "⚠️ MediaPipe tests failed",
-          description: `Check console for details. Errors: ${results.errors.length}`,
-          variant: "destructive",
-        });
-      }
-      
-      console.log('MediaPipe test results:', results);
-    } catch (error) {
-      console.error('MediaPipe test error:', error);
-      toast({
-        title: "❌ MediaPipe test failed",
-        description: "Check console for error details",
-        variant: "destructive",
-      });
-    }
-  };
+  // MediaPipe tests removed - no longer using MediaPipe
 
   // Interview tips for display
   const interviewTips = [
@@ -643,16 +811,7 @@ const InterviewSession = ({ role, questions, loadingQuestions, onInterviewComple
                 style={{ display: 'block', borderRadius: '1rem' }}
               />
               
-              {/* Face Mesh Debug Overlay */}
-              {showDebug && isVideoEnabled && (
-                <FaceMeshDebug 
-                  videoRef={videoRef}
-                  enabled={isVideoEnabled && isInterviewStarted}
-                  onMetricsUpdate={(metrics) => {
-                    console.log('Debug metrics:', metrics);
-                  }}
-                />
-              )}
+              {/* Face Mesh Debug removed - no longer using MediaPipe */}
               {!isVideoEnabled && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 rounded-2xl shadow-2xl border-2 border-blue-100 z-10" style={{ borderRadius: '1rem' }}>
                   <div className="animate-pulse mb-4">
@@ -686,17 +845,7 @@ const InterviewSession = ({ role, questions, loadingQuestions, onInterviewComple
                   </TooltipTrigger>
                   <TooltipContent>{isAudioEnabled ? 'Mic On' : 'Mic Off'}</TooltipContent>
                 </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      onClick={() => setShowDebug(!showDebug)}
-                      className={`w-10 h-10 rounded-full shadow-lg flex items-center justify-center ${showDebug ? 'bg-blue-500' : 'bg-gray-500'} transition-all hover:scale-110`}
-                    >
-                      <Eye className="h-5 w-5 text-white" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent>{showDebug ? 'Hide Face Mesh Debug' : 'Show Face Mesh Debug'}</TooltipContent>
-                </Tooltip>
+                {/* Face Mesh Debug button removed - no longer using MediaPipe */}
               </div>
             {isAISpeaking && (
               <div className="absolute bottom-4 left-4 bg-slate-500 text-white px-4 py-3 rounded-lg flex items-center space-x-2 animate-pulse shadow-lg">
@@ -787,7 +936,7 @@ const InterviewSession = ({ role, questions, loadingQuestions, onInterviewComple
                 {!isAISpeaking && (
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Button onClick={nextQuestion} size="sm" className="w-full sm:w-auto px-4 sm:px-8 transition-transform duration-200 hover:scale-105" disabled={isTranscribingLast}>
+                      <Button onClick={nextQuestion} size="sm" className="w-full sm:w-auto px-4 sm:px-8 transition-transform duration-200 hover:scale-105" disabled={isTranscribingLast || isProcessing}>
                     {isTranscribingLast ? (
                       <>
                             <Mic className="h-5 w-5 animate-bounce mr-2" />
@@ -813,40 +962,7 @@ const InterviewSession = ({ role, questions, loadingQuestions, onInterviewComple
               </div>
             )}
 
-            {/* MediaPipe Test Button */}
-            <div className="mt-4 flex justify-center">
-              <Button 
-                onClick={runMediaPipeTests} 
-                variant="outline" 
-                size="sm"
-                className="text-xs"
-              >
-                🧪 Test MediaPipe Models
-              </Button>
-            </div>
-
-            {/* Test Results Display */}
-            {testResults && (
-              <div className="mt-2 p-3 bg-gray-50 rounded-lg text-xs">
-                <div className="font-semibold mb-2">MediaPipe Test Results:</div>
-                <div className="space-y-1">
-                  <div>WebGL: {testResults.webglBackend ? '✅' : '❌'}</div>
-                  <div>Face Model: {testResults.faceModel ? '✅' : '❌'}</div>
-                  <div>Hand Model: {testResults.handModel ? '✅' : '❌'}</div>
-                  <div>Pose Model: {testResults.poseModel ? '✅' : '❌'}</div>
-                  {testResults.errors.length > 0 && (
-                    <div className="text-red-600">
-                      Errors: {testResults.errors.length}
-                    </div>
-                  )}
-                  {testResults.warnings.length > 0 && (
-                    <div className="text-yellow-600">
-                      Warnings: {testResults.warnings.length}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
+            {/* MediaPipe Test Button removed - no longer using MediaPipe */}
           </div>
 
           {/* Collapsible Interview Tips */}
